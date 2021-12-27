@@ -91,6 +91,7 @@ var (
 	TiKVSmallReadDuration                    prometheus.Histogram
 	TiKVReadThroughput                       prometheus.Histogram
 	TiKVUnsafeDestroyRangeFailuresCounterVec *prometheus.CounterVec
+	TiKVUnsafeRecoverFailuresCounterVec      *prometheus.CounterVec
 )
 
 // Label constants.
@@ -541,6 +542,14 @@ func initMetrics(namespace, subsystem string) {
 			Help:      "Counter of unsafe destroyrange failures",
 		}, []string{LblType})
 
+	TiKVUnsafeRecoverFailuresCounterVec = prometheus.NewCounterVec(
+		prometheus.CounterOpts{
+			Namespace: namespace,
+			Subsystem: subsystem,
+			Name:      "gc_unsafe_recover_failures",
+			Help:      "Counter of unsafe recover failures",
+		}, []string{LblType})
+
 	initShortcuts()
 }
 
@@ -605,6 +614,8 @@ func RegisterMetrics() {
 	prometheus.MustRegister(TiKVTxnCommitBackoffCount)
 	prometheus.MustRegister(TiKVSmallReadDuration)
 	prometheus.MustRegister(TiKVReadThroughput)
+	prometheus.MustRegister(TiKVUnsafeDestroyRangeFailuresCounterVec)
+	prometheus.MustRegister(TiKVUnsafeRecoverFailuresCounterVec)
 }
 
 // readCounter reads the value of a prometheus.Counter.

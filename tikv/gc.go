@@ -198,6 +198,73 @@ func (s *KVStore) batchResolveLocksInARegion(bo *Backoffer, locks []*txnlock.Loc
 	}
 }
 
+const unsafeRecoverTimeout = 5 * time.Minute
+
+// UnsafeRecover Cleans up all mvcc versions in (timestamp, max uint64] in a range[startKey,endKey).
+// The range might span over multiple regions, and the `ctx` doesn't indicate region. The request will be done directly
+// on RocksDB, bypassing the Raft layer. User must promise that, after calling `UnsafeDestroyRange`,
+// there no any request work against tikv in specified key range.
+// However, `UnsafeDestroyRange` is allowed to be called multiple times on an single range.
+func (s *KVStore) UnsafeRecover(ctx context.Context, startKey []byte, endKey []byte, timestamp uint64) error {
+	// Get all stores every time deleting a region. So the store list is less probably to be stale.
+	stores, err := s.listStoresForUnsafeDestory(ctx)
+	if err != nil {
+		metrics.TiKVUnsafeRecoverFailuresCounterVec.WithLabelValues("get_stores").Inc()
+		return err
+	}
+
+	req := tikvrpc.NewRequest(tikvrpc.CmdUnsafeRecover, &kvrpcpb.UnsafeRecoverRequest{
+		StartKey:  startKey,
+		EndKey:    endKey,
+		Timestamp: timestamp,
+	})
+
+	var wg sync.WaitGroup
+	errChan := make(chan error, len(stores))
+
+	for _, store := range stores {
+		address := store.Address
+		storeID := store.Id
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+
+			resp, err1 := s.GetTiKVClient().SendRequest(ctx, address, req, unsafeRecoverTimeout)
+			if err1 == nil {
+				if resp == nil || resp.Resp == nil {
+					err1 = errors.Errorf("[unsafe recover] returns nil response from store %v", storeID)
+				} else {
+					errStr := (resp.Resp.(*kvrpcpb.UnsafeRecoverResponse)).Error
+					if len(errStr) > 0 {
+						err1 = errors.Errorf("[unsafe recover] range failed on store %v: %s", storeID, errStr)
+					}
+				}
+			}
+
+			if err1 != nil {
+				metrics.TiKVUnsafeRecoverFailuresCounterVec.WithLabelValues("send").Inc()
+			}
+			errChan <- err1
+		}()
+	}
+
+	var errs []string
+	for range stores {
+		err1 := <-errChan
+		if err1 != nil {
+			errs = append(errs, err1.Error())
+		}
+	}
+
+	wg.Wait()
+
+	if len(errs) > 0 {
+		return errors.Errorf("[unsafe destroy range] destroy range finished with errors: %v", errs)
+	}
+
+	return nil
+}
+
 const unsafeDestroyRangeTimeout = 5 * time.Minute
 
 // UnsafeDestroyRange Cleans up all keys in a range[startKey,endKey) and quickly free the disk space.

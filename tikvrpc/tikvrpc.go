@@ -94,6 +94,8 @@ const (
 	CmdStoreSafeTS
 	CmdLockWaitInfo
 
+	CmdUnsafeRecover
+
 	CmdCop CmdType = 512 + iota
 	CmdCopStream
 	CmdBatchCop
@@ -157,6 +159,8 @@ func (t CmdType) String() string {
 		return "RawScan"
 	case CmdUnsafeDestroyRange:
 		return "UnsafeDestroyRange"
+	case CmdUnsafeRecover:
+		return "UnsafeRecover"
 	case CmdRegisterLockObserver:
 		return "RegisterLockObserver"
 	case CmdCheckLockObserver:
@@ -373,6 +377,11 @@ func (req *Request) RawScan() *kvrpcpb.RawScanRequest {
 // UnsafeDestroyRange returns UnsafeDestroyRangeRequest in request.
 func (req *Request) UnsafeDestroyRange() *kvrpcpb.UnsafeDestroyRangeRequest {
 	return req.Req.(*kvrpcpb.UnsafeDestroyRangeRequest)
+}
+
+// UnsafeRecover returns UnsafeRecoverRequest in request.
+func (req *Request) UnsafeRecover() *kvrpcpb.UnsafeRecoverRequest {
+	return req.Req.(*kvrpcpb.UnsafeRecoverRequest)
 }
 
 // RawGetKeyTTL returns RawGetKeyTTLRequest in request.
@@ -701,6 +710,8 @@ func SetContext(req *Request, region *metapb.Region, peer *metapb.Peer) error {
 		req.RawScan().Context = ctx
 	case CmdUnsafeDestroyRange:
 		req.UnsafeDestroyRange().Context = ctx
+	case CmdUnsafeRecover:
+		req.UnsafeRecover().Context = ctx
 	case CmdGetKeyTTL:
 		req.RawGetKeyTTL().Context = ctx
 	case CmdRawCompareAndSwap:
@@ -835,6 +846,10 @@ func GenRegionErrorResp(req *Request, e *errorpb.Error) (*Response, error) {
 		p = &kvrpcpb.UnsafeDestroyRangeResponse{
 			RegionError: e,
 		}
+	case CmdUnsafeRecover:
+		p = &kvrpcpb.UnsafeRecoverResponse{
+			RegionError: e,
+		}
 	case CmdGetKeyTTL:
 		p = &kvrpcpb.RawGetKeyTTLResponse{
 			RegionError: e,
@@ -955,6 +970,8 @@ func CallRPC(ctx context.Context, client tikvpb.TikvClient, req *Request) (*Resp
 		resp.Resp, err = client.RawScan(ctx, req.RawScan())
 	case CmdUnsafeDestroyRange:
 		resp.Resp, err = client.UnsafeDestroyRange(ctx, req.UnsafeDestroyRange())
+	case CmdUnsafeRecover:
+		resp.Resp, err = client.UnsafeRecover(ctx, req.UnsafeRecover())
 	case CmdGetKeyTTL:
 		resp.Resp, err = client.RawGetKeyTTL(ctx, req.RawGetKeyTTL())
 	case CmdRawCompareAndSwap:
